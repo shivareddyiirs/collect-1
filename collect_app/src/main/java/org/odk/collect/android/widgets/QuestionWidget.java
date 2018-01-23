@@ -46,13 +46,14 @@ import org.odk.collect.android.activities.FormEntryActivity;
 import org.odk.collect.android.application.Collect;
 import org.odk.collect.android.database.ActivityLogger;
 import org.odk.collect.android.exception.JavaRosaException;
-import org.odk.collect.android.injection.DependencyProvider;
+import org.odk.collect.android.utilities.DependencyProvider;
 import org.odk.collect.android.listeners.AudioPlayListener;
 import org.odk.collect.android.logic.FormController;
 import org.odk.collect.android.utilities.TextUtils;
 import org.odk.collect.android.utilities.ViewIds;
 import org.odk.collect.android.views.MediaLayout;
 import org.odk.collect.android.widgets.interfaces.BaseImageWidget;
+import org.odk.collect.android.widgets.interfaces.ButtonWidget;
 import org.odk.collect.android.widgets.interfaces.Widget;
 
 import java.util.ArrayList;
@@ -72,7 +73,7 @@ public abstract class QuestionWidget
     private final int questionFontSize;
     private final FormEntryPrompt formEntryPrompt;
     private final MediaLayout questionMediaLayout;
-    private final MediaPlayer player;
+    private MediaPlayer player;
     private final TextView helpTextView;
 
     private Bundle state;
@@ -100,7 +101,7 @@ public abstract class QuestionWidget
 
         });
 
-        getPlayer().setOnErrorListener(new MediaPlayer.OnErrorListener() {
+        player.setOnErrorListener(new MediaPlayer.OnErrorListener() {
             @Override
             public boolean onError(MediaPlayer mp, int what, int extra) {
                 Timber.e("Error occured in MediaPlayer. what = %d, extra = %d",
@@ -121,6 +122,14 @@ public abstract class QuestionWidget
 
         addQuestionMediaLayout(getQuestionMediaLayout());
         addHelpTextView(getHelpTextView());
+    }
+
+    /** Releases resources held by this widget */
+    public void release() {
+        if (player != null) {
+            player.release();
+            player = null;
+        }
     }
 
     protected void injectDependencies(DependencyProvider dependencyProvider) {}
@@ -377,22 +386,21 @@ public abstract class QuestionWidget
     @Override
     protected void onWindowVisibilityChanged(int visibility) {
         if (visibility == INVISIBLE || visibility == GONE) {
-            if (getPlayer().isPlaying()) {
-                getPlayer().stop();
-                getPlayer().reset();
-            }
+            stopAudio();
         }
     }
 
     public void stopAudio() {
-        if (getPlayer().isPlaying()) {
-            getPlayer().stop();
-            getPlayer().reset();
+        if (player != null && player.isPlaying()) {
+            Timber.i("stopAudio " + player);
+            player.stop();
+            player.reset();
         }
     }
 
-    protected Button getSimpleButton(String text, @IdRes int withId) {
-        Button button = new Button(getContext());
+    protected Button getSimpleButton(String text, @IdRes final int withId) {
+        final QuestionWidget questionWidget = this;
+        final Button button = new Button(getContext());
 
         button.setId(withId);
         button.setText(text);
@@ -403,6 +411,15 @@ public abstract class QuestionWidget
         params.setMargins(7, 5, 7, 5);
 
         button.setLayoutParams(params);
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (Collect.allowClick()) {
+                    ((ButtonWidget) questionWidget).onButtonClick(withId);
+                }
+            }
+        });
         return button;
     }
 
@@ -434,7 +451,7 @@ public abstract class QuestionWidget
 
     protected ImageView getAnswerImageView(Bitmap bitmap) {
         final QuestionWidget questionWidget = this;
-        ImageView imageView = new ImageView(getContext());
+        final ImageView imageView = new ImageView(getContext());
         imageView.setId(ViewIds.generateViewId());
         imageView.setPadding(10, 10, 10, 10);
         imageView.setAdjustViewBounds(true);
@@ -442,7 +459,7 @@ public abstract class QuestionWidget
         imageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (questionWidget instanceof BaseImageWidget) {
+                if (questionWidget instanceof BaseImageWidget && Collect.allowClick()) {
                     ((BaseImageWidget) questionWidget).onImageClick();
                 }
             }
